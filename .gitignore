@@ -1,0 +1,4 @@
+./data.zip
+*.pyc
+.vscode
+data/
