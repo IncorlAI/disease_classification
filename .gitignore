@@ -1,4 +1,5 @@
-./data.zip
+data.zip
 *.pyc
 .vscode
 data/
+log
