@@ -8,6 +8,7 @@ from PIL import Image
 from torchvision import transforms
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Subset
+from torch.utils.data.sampler import SubsetRandomSampler
 from sklearn.model_selection import KFold
 
 def update_fold_idx(training_samples):
@@ -37,20 +38,20 @@ class DaconDataLoader(object):
             self.training_samples = DataLoadPreprocess(args)
             idx_train_list, idx_valid_list = update_fold_idx(self.training_samples)
 
-            train_samples = Subset(self.training_samples, idx_train_list)
-            valid_samples = Subset(self.training_samples, idx_valid_list)
-            
-            self.training_data = DataLoader(train_samples, args.batch_size, 
+            # train_samples = Subset(self.training_samples, idx_train_list)
+            # valid_samples = Subset(self.training_samples, idx_valid_list)
+            train_sampler, valid_sampler = SubsetRandomSampler(idx_train_list), SubsetRandomSampler(idx_valid_list)
+            self.training_data = DataLoader(self.training_samples, args.batch_size, 
                                             shuffle=(train_sampler is None),
-                                            num_workers = args.num_threads,
-                                            pin_memory = True,
-                                            sampler = train_sampler)
+                                            num_workers=args.num_threads,
+                                            pin_memory= True,
+                                            sampler=train_sampler)
             
-            self.validation_data = DataLoader(valid_samples, args.batch_size, 
+            self.validation_data = DataLoader(self.training_samples, args.batch_size, 
                                               shuffle=False,
-                                              num_workers = args.num_threads,
-                                              pin_memory = True,
-                                              sampler = train_sampler)
+                                              num_workers=args.num_threads,
+                                              pin_memory=True,
+                                              sampler=valid_sampler)
             
 class DataLoadPreprocess(object):
     def __init__(self, args):
@@ -62,7 +63,6 @@ class DataLoadPreprocess(object):
 
     def __getitem__(self, idx):
         img_path, label = self.pair_data[idx]
-        # print(idx)
         image = Image.open(img_path)
         
         image = np.array(image, dtype=np.float32) /255.0
