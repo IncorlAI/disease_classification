@@ -1,4 +1,5 @@
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 from dataloader import DaconDataLoader
 from sklearn.metrics import f1_score
 from torchvision import transforms
@@ -9,7 +10,6 @@ import warnings
 import torch
 import torch.nn as nn
 
-warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description="DACON")
 
@@ -37,7 +37,7 @@ parser.add_argument('--log_freq',               type=int,   help='Logging freque
 parser.add_argument('--save_freq',              type=int,   help='Checkpoint saving frequency in global steps',         default=500)
 
 # Multi-gpu training
-parser.add_argument('--gpu',            type=int,  help='GPU id to use', default=0)
+parser.add_argument('--gpu',            type=int,  help='GPU id to use', default=1)
 parser.add_argument('--rank',           type=int,  help='node rank(tensor dimension)for distributed training', default=0)
 parser.add_argument('--dist_url',       type=str,  help='url used to set up distributed training', default='file:///c:/MultiGPU.txt')
 parser.add_argument('--dist_backend',   type=str,  help='distributed backend', default='gloo')
@@ -55,47 +55,71 @@ inv_normalize = transforms.Normalize(
     std=[1/0.229, 1/0.224, 1/0.225]
 )
 
+
 def compute_score(label, prediction):
     label = label.detach().cpu().numpy()
     prediction = prediction.argmax(1).detach().cpu().numpy()
     
     return f1_score(label, prediction, average="macro")
 
-def validate_model(valid_batched, model, criterion):
+def validate_model(validation_data, model, criterion):
+    total_valid_loss = 0
+    valid_label_list = []
+    valid_output_list = []
     with torch.no_grad():
-        valid_image = valid_batched["image"].cuda(args.gpu, non_blocking=True)
-        valid_label = valid_batched["label"].cuda(args.gpu, non_blocking=True)
+        for valid_batched in tqdm(validation_data):
+            valid_image = valid_batched["image"].cuda(args.gpu, non_blocking=True)
+            valid_label = valid_batched["label"].cuda(args.gpu, non_blocking=True)
 
-        output = model(valid_image)
-        model.eval()
-        valid_loss = criterion(output, valid_label)
-        valid_f1 = compute_score(valid_label, output)
-        
-    return valid_loss, valid_f1
-        
+            prediction = model(valid_image)
+            model.eval()
+            valid_loss = criterion(prediction, valid_label)
+
+            total_valid_loss += valid_loss
+            
+            valid_label_list += valid_label.detach().cpu().numpy().tolist()
+            valid_output_list += prediction.argmax(1).detach().cpu().numpy().tolist()
+            
+    avg_valid_loss = total_valid_loss / len(validation_data)
+    valid_f1 = f1_score(valid_label_list, valid_output_list, average="macro")
+
+    return avg_valid_loss, valid_f1
+
 def main():
+    # make direcotry
     command = "mkdir " + os.path.join(args.log_directory, args.model_name, "model")
     os.system(command)
+
+    warnings.filterwarnings('ignore')
+    # gpu setting
+    torch.cuda.empty_cache()
+    main_worker()
+
+def main_worker():
+    if args.gpu is not None:
+        print("Use GPU: {} for training".format(args.gpu))
     
     dataloader = DaconDataLoader(args)
 
     model = Architecture_tmp(model_type=args.model_name, num_classes=6)
     model.train()
-    model = torch.nn.DataParallel(model)
-    model.cuda()
+    model = torch.nn.DataParallel(model, device_ids=[args.gpu])
+    model.to(f'cuda:{model.device_ids[0]}')
+    # model.cuda()
 
     writer = SummaryWriter(log_dir=os.path.join(args.log_directory, args.model_name, 'summaries'), flush_secs=30)
 
     optimizer = torch.optim.Adam(model.parameters(), weight_decay=args.weight_decay, lr=args.learning_rate)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
     
     global_step = 0
     steps_per_epoch = len(dataloader.training_data)
     epoch = global_step // steps_per_epoch
         
     while epoch < args.num_epochs:
-        for step, sample_batched in enumerate(zip(dataloader.training_data, dataloader.validation_data)):
-            train_batched, valid_batched = sample_batched[0], sample_batched[1]
+        # for step, sample_batched in enumerate(zip(dataloader.training_data, dataloader.validation_data)):
+        for step, train_batched in enumerate(dataloader.training_data):
+            # train_batched, valid_batchead = sample_batched[0], sample_batched[1]
             
             optimizer.zero_grad()
             
@@ -126,7 +150,7 @@ def main():
             writer.flush()
             global_step += 1
         
-        valid_loss, valid_f1 = validate_model(valid_batched, model, criterion)
+        valid_loss, valid_f1 = validate_model(dataloader.validation_data, model, criterion)
         print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f} | valid loss: {:.5f} | train f1: {:.3f} | valid f1: {:.3f}"
         print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, loss, valid_loss, train_f1, valid_f1))
         
