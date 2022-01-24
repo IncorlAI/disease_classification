@@ -26,7 +26,7 @@ def make_dataset(image_path, json_path):
         json_file_path = os.path.join(json_path, name+".json")
         with open(json_file_path, 'r') as jf:
             json_dict = json.load(jf)
-            crop = json_dict["annotations"]["crop"]
+            crop = int(json_dict["annotations"]["crop"])
         pair_data.append([img_file_path, crop_label_dict[crop]])
     return pair_data
 
