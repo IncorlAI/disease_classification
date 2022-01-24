@@ -118,6 +118,8 @@ def main_worker():
     epoch = global_step // steps_per_epoch
         
     while epoch < args.num_epochs:
+        train_label_list = []
+        train_output_list = []
         # for step, sample_batched in enumerate(zip(dataloader.training_data, dataloader.validation_data)):
         for step, train_batched in enumerate(dataloader.training_data):
             # train_batched, valid_batchead = sample_batched[0], sample_batched[1]
@@ -151,6 +153,7 @@ def main_worker():
             global_step += 1
         
         valid_loss, valid_f1 = validate_model(dataloader.validation_data, model, criterion)
+        writer.add_scalar("valid F1 score", valid_f1, global_step)
         print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f} | valid loss: {:.5f} | train f1: {:.3f} | valid f1: {:.3f}"
         print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, loss, valid_loss, train_f1, valid_f1))
 
