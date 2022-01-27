@@ -16,8 +16,8 @@ parser = argparse.ArgumentParser(description="DACON")
 
 parser.add_argument('--mode',                   type=str,   help='training and validation mode',    default='train')
 parser.add_argument('--model_name',             type=str,   help='model name to be trained',        default='resnet')
-
 parser.add_argument("--data_path",              type=str,   help="image data path",                 default=os.path.join(os.getcwd(), "data"))
+
 # Training
 parser.add_argument('--num_seed',               type=int,   help='random seed number',              default=1)
 parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=8)

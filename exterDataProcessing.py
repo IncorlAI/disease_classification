@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 
 SRC_DATA_ROOT = "./Externaldata/"
-TAR_DATA_ROOT = "./data/"
+TAR_DATA_ROOT = "./data/Preprocessed/"
 TRAIN_FOLDER = "train_ex/"
 
 
@@ -53,13 +53,13 @@ def saveRemappedJsons(src_path, tar_path):
 
 if __name__ == '__main__':
     src_path = SRC_DATA_ROOT + TRAIN_FOLDER
-    src_list = os.listdir(src_path + 'images/')
+    src_list = os.listdir(src_path + 'img/')
 
     for idx, fruit_dir in enumerate(src_list):
 
-        img_src_path = src_path + 'images/' + fruit_dir + '/'
-        lbl_src_path = src_path + 'json/[라벨]' + fruit_dir + '/'
-        img_tar_path = TAR_DATA_ROOT + "train/images/"
-        lbl_tar_path = TAR_DATA_ROOT + "train/json/"
+        img_src_path = src_path + 'img/' + fruit_dir + '/'
+        lbl_src_path = src_path + 'label/[라벨]' + fruit_dir + '/'
+        img_tar_path = TAR_DATA_ROOT + TRAIN_FOLDER + "img/"
+        lbl_tar_path = TAR_DATA_ROOT + TRAIN_FOLDER + "label/"
         saveResizedImages(img_src_path,img_tar_path)
         saveRemappedJsons(lbl_src_path, lbl_tar_path)
