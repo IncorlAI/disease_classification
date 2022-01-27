@@ -60,7 +60,7 @@ class ClassifyDataset(Dataset):
             img_path = fp
             if not os.path.isfile(img_path):
                 img_path = os.path.join(fp, img_name + ".jpeg")
-            lab_path = img_path.split(".")[0].replace("images", "json") + ".json"
+            lab_path = img_path.split(".")[0].replace("img", "label") + ".json"            
             if not os.path.isfile(lab_path):
                 lab_path = lab_path.split(".")[0] + ".jpg..json"
             if not os.path.isfile(lab_path):
