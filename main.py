@@ -50,7 +50,7 @@ parser.add_argument('--multiprocessing_distributed',       help='Use multi-proce
                                                                 'multi node data parallel training', default=False)
 
 args = parser.parse_args()
-
+a=1
 inv_normalize = transforms.Normalize(
     mean=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
     std=[1/0.229, 1/0.224, 1/0.225]
