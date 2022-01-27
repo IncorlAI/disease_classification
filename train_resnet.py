@@ -11,6 +11,7 @@ import os
 
 from dataloaders import ClassifyDataset
 from networks import ResNet50
+from networks import Efficient
 
 from tensorboardX import SummaryWriter
 from PIL import Image, ImageDraw, ImageFont
@@ -107,9 +108,7 @@ def train(args):
                               )
     
     # Initialize generator and discriminator
-    classifier = ResNet50(crop=len(train_dataset.dict_crops), 
-                          dise=len(train_dataset.dict_dises), 
-                          risk=len(train_dataset.dict_risks))
+    classifier = Efficient()
     if args.multi_gpu:
         classifier = torch.nn.DataParallel(classifier, device_ids=args.multi_gpu).cuda()
     elif is_cuda:
