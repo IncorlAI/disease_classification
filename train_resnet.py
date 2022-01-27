@@ -21,20 +21,20 @@ def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
     ## Hyper Parameters
     parser.add_argument("--n_epochs", type=int, default=30, help="number of epochs of training")
-    parser.add_argument('--batch_size', type=int, default=16, help='training batch size.')
+    parser.add_argument('--batch_size', type=int, default=64, help='training batch size.')
     parser.add_argument('--lr', default=1e-3, type=float, help='base value of learning rate.')
     parser.add_argument("--b1", type=float, default=0.9, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
     parser.add_argument('--weight_decay', default=0, type=float, help='Weight decay for SGD')
     parser.add_argument('--img_size', default=[256, 256], nargs="+", type=int, help='the image size')
     ## Data Path
-    parser.add_argument('--train_path', default="data/train/images", help='the train images path')
+    parser.add_argument('--train_path', default="C:/Users/test/project/jyb/002_data/merged/train/img", help='the train images path')
     parser.add_argument('--valid_path', default="", help='the valid images path')
     ## Training Resource Setting
     parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
     parser.add_argument('--multi_gpu', default=False, type=bool, help='Use cuda to train model')
-    parser.add_argument('--device', default=0, type=int, help='device number')
+    parser.add_argument('--device', default=1, type=int, help='pretrained base model')
     ## Save & Load
     parser.add_argument('--pretrained_model', default='', help='pretrained base model')
     parser.add_argument('--save_path', default='weights', help='Location to save checkpoint models')
