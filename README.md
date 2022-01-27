@@ -2,18 +2,25 @@
 
 ## 파일 경로
 ### data
-data
-  - test
-    - images
-    - json
-  - train
-    - images
-    - json
-Externaldata
-  - train_ex
-    - json
-    - images
-
+┌data
+  ├ test
+    ├ images
+    └ json
+  └ train
+    ├ images
+    └ json
+└Externaldata
+  └ train_ex
+    ├ json
+      ├ [라벨]04.딸기_1.질병
+      ├ [라벨]12.포도_1.질병
+      ├ [라벨]고추_1.질병
+      └ [라벨]오이_1.질병
+    └ images
+      ├ 04.딸기_1.질병
+      ├ 12.포도_1.질병
+      ├ 고추_1.질병
+      └ 오이_1.질병
 ### source
 
 ## Dataset 추가
