@@ -20,7 +20,7 @@ parser.add_argument('--model_name',             type=str,   help='model name to 
 parser.add_argument("--data_path",              type=str,   help="image data path",                 default=os.path.join(os.getcwd(), "data"))
 # Training
 parser.add_argument('--num_seed',               type=int,   help='random seed number',              default=1)
-parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=8)
+parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=4)
 parser.add_argument('--num_epochs',             type=int,   help='number of epochs',                default=80)
 parser.add_argument('--learning_rate',          type=float, help='initial learning rate',           default=1e-4)
 parser.add_argument('--weight_decay',           type=float, help='weight decay factor for optimization',                                default=1e-5)

@@ -22,7 +22,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
     ## Hyper Parameters
     parser.add_argument("--n_epochs", type=int, default=30, help="number of epochs of training")
-    parser.add_argument('--batch_size', type=int, default=16, help='training batch size.')
+    parser.add_argument('--batch_size', type=int, default=4, help='training batch size.')
     parser.add_argument('--lr', default=1e-3, type=float, help='base value of learning rate.')
     parser.add_argument("--b1", type=float, default=0.9, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -32,7 +32,7 @@ def get_parser():
     parser.add_argument('--train_path', default="data/train/images", help='the train images path')
     parser.add_argument('--valid_path', default="", help='the valid images path')
     ## Training Resource Setting
-    parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
+    parser.add_argument('--num_workers', default=2, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
     parser.add_argument('--multi_gpu', default=False, type=bool, help='Use cuda to train model')
     parser.add_argument('--device', default=0, type=int, help='device number')
@@ -108,7 +108,8 @@ def train(args):
                               )
     
     # Initialize generator and discriminator
-    classifier = Efficient()
+    # classifier = Efficient.Efficient()
+    classifier = ResNet50()
     if args.multi_gpu:
         classifier = torch.nn.DataParallel(classifier, device_ids=args.multi_gpu).cuda()
     elif is_cuda:
@@ -271,5 +272,7 @@ def evaluate_classifier(classifier, loader, device, writer, step, mode="Valid"):
 
 
 if __name__ == "__main__":
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     args = get_parser()
     train(args)
