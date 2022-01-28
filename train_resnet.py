@@ -108,8 +108,10 @@ def train(args):
                               )
     
     # Initialize generator and discriminator
-    # classifier = Efficient.Efficient()
-    classifier = ResNet50()
+    classifier = Efficient.Efficient(crop=len(train_dataset.dict_crops),
+                              dise=len(train_dataset.dict_dises),
+                              risk=len(train_dataset.dict_risks))
+    # classifier = ResNet50()
     if args.multi_gpu:
         classifier = torch.nn.DataParallel(classifier, device_ids=args.multi_gpu).cuda()
     elif is_cuda:
