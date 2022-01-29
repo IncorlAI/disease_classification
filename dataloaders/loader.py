@@ -1,17 +1,11 @@
-from dis import dis
 import glob
-import random
-import os
-import numpy as np
-import cv2
 import json
+import os
+
 import torch
-from tqdm import tqdm
-
-from torch.utils.data import Dataset
 from PIL import Image
-import torchvision.transforms as transforms
-
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
 ## from baseline
 crop = {'1':'딸기','2':'토마토','3':'파프리카','4':'오이','5':'고추','6':'시설포도'}
@@ -60,21 +54,25 @@ class ClassifyDataset(Dataset):
             img_path = fp
             if not os.path.isfile(img_path):
                 img_path = os.path.join(fp, img_name + ".jpeg")
-            lab_path = img_path.split(".")[0].replace("images", "json") + ".json"
-            if not os.path.isfile(lab_path):
-                lab_path = lab_path.split(".")[0] + ".jpg..json"
-            if not os.path.isfile(lab_path):
-                lab_path = lab_path.split(".")[0] + ".jpeg..json"
-            
-            with open(lab_path, 'r') as f:
-                lab = json.load(f)
-            
-            task = lab['description']['task']
-            code_crop = crop2code[int(lab['annotations']["crop"])]
-            code_dise = disease2code[lab['annotations']["disease"]]
-            code_risk = risk2code[int(lab['annotations']["risk"])]
-            
-            lab = (code_crop, code_dise, code_risk)
+
+            if self.mode != "pred":
+                lab_path = img_path.split(".")[0].replace("images", "json") + ".json"
+                if not os.path.isfile(lab_path):
+                    lab_path = lab_path.split(".")[0] + ".jpg..json"
+                if not os.path.isfile(lab_path):
+                    lab_path = lab_path.split(".")[0] + ".jpeg..json"
+
+                with open(lab_path, 'r') as f:
+                    lab = json.load(f)
+
+                task = lab['description']['task']
+                code_crop = crop2code[int(lab['annotations']["crop"])]
+                code_dise = disease2code[lab['annotations']["disease"]]
+                code_risk = risk2code[int(lab['annotations']["risk"])]
+                lab = (code_crop, code_dise, code_risk)
+            else:
+                lab = (-1,-1,-1)
+
             
             self.samples[img_name] = (img_path, lab)
         
@@ -90,7 +88,7 @@ class ClassifyDataset(Dataset):
                                                     #                       std=[0.229, 0.224, 0.225])
                                                     ]
                                                     )
-            elif mode == "val":
+            elif mode == "val" or mode == "pred":
                 self.transform = transforms.Compose([
                                                     transforms.CenterCrop(224),
                                                     transforms.ToTensor(),

@@ -22,7 +22,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
     ## Hyper Parameters
     parser.add_argument("--n_epochs", type=int, default=30, help="number of epochs of training")
-    parser.add_argument('--batch_size', type=int, default=4, help='training batch size.')
+    parser.add_argument('--batch_size', type=int, default=16, help='training batch size.')
     parser.add_argument('--lr', default=1e-3, type=float, help='base value of learning rate.')
     parser.add_argument("--b1", type=float, default=0.9, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -100,12 +100,12 @@ def train(args):
                               )
     
     # Initialize generator and discriminator
-    classifier = Efficient.Efficient(crop=len(train_dataset.dict_crops),
-                              dise=len(train_dataset.dict_dises),
-                              risk=len(train_dataset.dict_risks))
-    # classifier = ResNet50(crop=len(train_dataset.dict_crops),
-    #                               dise=len(train_dataset.dict_dises),
-    #                               risk=len(train_dataset.dict_risks))
+    # classifier = Efficient.Efficient(crop=len(train_dataset.dict_crops),
+    #                           dise=len(train_dataset.dict_dises),
+    #                           risk=len(train_dataset.dict_risks))
+    classifier = ResNet50(crop=len(train_dataset.dict_crops),
+                                  dise=len(train_dataset.dict_dises),
+                                  risk=len(train_dataset.dict_risks))
     if args.multi_gpu:
         classifier = torch.nn.DataParallel(classifier, device_ids=args.multi_gpu).cuda()
     elif is_cuda:
