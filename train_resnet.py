@@ -12,7 +12,8 @@ import os
 from dataloaders import ClassifyDataset
 from networks import ResNet50
 
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
@@ -65,7 +66,7 @@ def train(args):
                                            transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                                                 std=[0.229, 0.224, 0.225]),
                                           ])
-    # imgnet_norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
     if args.valid_path == "":
         entire_paths = sorted(glob.glob(f"{args.train_path}/*"))
         args.valid_path = args.train_path
