@@ -328,7 +328,7 @@ if __name__ == "__main__":
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     args = get_parser()
-    # train(args)
+    train(args)
     preds = predict(args)
     submission = pd.read_csv('data/sample_submission.csv')
     submission['label'] = preds
