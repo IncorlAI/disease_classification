@@ -1,22 +1,17 @@
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
-import torch.nn as nn
-import numpy as np
-import pandas as pd
 import argparse
-import random
-import torch
 import glob
-import time
 import os
+import random
+
+import pandas as pd
+import torch
+import torchvision.transforms as transforms
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from dataloaders import ClassifyDataset
-from networks import ResNet50
 from networks import Efficient
-
-from tensorboardX import SummaryWriter
-from PIL import Image, ImageDraw, ImageFont
-from tqdm import tqdm
 
 
 def get_parser():
@@ -102,8 +97,8 @@ def train(args):
 
     # Initialize generator and discriminator
     classifier = Efficient.Efficient(crop=len(train_dataset.dict_crops),
-                              dise=len(train_dataset.dict_dises),
-                              risk=len(train_dataset.dict_risks))
+                                     dise=len(train_dataset.dict_dises),
+                                     risk=len(train_dataset.dict_risks))
     # classifier = ResNet50(crop=len(train_dataset.dict_crops),
     #                       dise=len(train_dataset.dict_dises),
     #                       risk=len(train_dataset.dict_risks))
@@ -317,15 +312,15 @@ def predict(args):
             results.extend(preds)
 
         if kind == "dise":
-            results = list(map(lambda diseaseIdx :diseaseKey[diseaseIdx], results))
+            results = list(map(lambda diseaseIdx: diseaseKey[diseaseIdx], results))
         elif kind == "crop":
-            results = list(map(lambda Idx :str(cropKey[Idx]), results))
+            results = list(map(lambda Idx: str(cropKey[Idx]), results))
         else:
             results = list(map(str, results))
         results_list.append(results)
 
-    results_list = list(map(lambda idx : results_list[0][idx] + "_" + results_list[1][idx] + "_" + results_list[2][idx],
-                   range(len(results_list[0]))))
+    results_list = list(map(lambda idx: results_list[0][idx] + "_" + results_list[1][idx] + "_" + results_list[2][idx],
+                            range(len(results_list[0]))))
     return results_list
 
 
