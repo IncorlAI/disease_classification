@@ -1,3 +1,5 @@
+import enum
+from numpy import average
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from dataloader import DaconDataLoader
@@ -64,47 +66,32 @@ def compute_score(label, prediction):
     
     return f1_score(label, prediction, average="macro")
 
-def validate_model(validation_data, model, criterion):
+def validate_model(validation_data, model, criterion, writer):
     total_valid_loss = 0
-    valid_crop_label_list = []
-    valid_disease_label_list = []
-    valid_risk_label_list = []
-    valid_output_list = []
-    # corr_crop, corr_dise, corr_risk, cnt = 0, 0, 0, 0
     with torch.no_grad():
-        for valid_batched in tqdm(validation_data):
+        for step, valid_batched in enumerate(tqdm(validation_data)):
             valid_image = valid_batched["image"].cuda(args.gpu, non_blocking=True)
-            # valid_label = valid_batched["label"].cuda(args.gpu, non_blocking=True)
-            valid_crop = valid_batched["crop_lb"].cuda(args.gpu, non_blocking=True)
-            valid_disease = valid_batched["disease_lb"].cuda(args.gpu, non_blocking=True)
-            valid_risk = valid_batched["risk_lb"].cuda(args.gpu, non_blocking=True)
+            valid_crop_label = valid_batched["crop_lb"].cuda(args.gpu, non_blocking=True)
+            valid_disease_label = valid_batched["disease_lb"].cuda(args.gpu, non_blocking=True)
+            valid_risk_label = valid_batched["risk_lb"].cuda(args.gpu, non_blocking=True)
             
             logits = model(valid_image)
             model.eval()
             
-            probs = [logit.softmax(dim=1).detach().cpu() for logit in logits]
-            predictions = [prob.argmax(dim=1).detach().numpy() for prob in probs]
+            # probs = [logit.softmax(dim=1) for logit in logits]
+            # predictions = [prob.argmax(dim=1) for prob in probs]
             
-            valid_crop_loss = criterion(predictions[0], valid_crop)
-            valid_disease_loss = criterion(predictions[1], valid_disease)
-            valid_risk_loss = criterion(predictions[2], valid_risk)
+            valid_crop_label_loss = criterion(logits[0], valid_crop_label)
+            valid_disease_loss = criterion(logits[1], valid_disease_label)
+            valid_risk_loss = criterion(logits[2], valid_risk_label)
 
-            total_valid_loss = valid_crop_loss + valid_disease_loss + valid_risk_loss
+            total_valid_loss = valid_crop_label_loss + valid_disease_loss + valid_risk_loss
             
-            # corr_crop += (predictions[0] == valid_crop.detach().cpu().numpy()).sum()
-            # corr_dise += (predictions[1] == valid_disease.detach().cpu().numpy()).sum()
-            # corr_risk += (predictions[2] == valid_risk.detach().cpu().numpy()).sum()
-            # cnt += len(valid_crop)
-            valid_crop_label_list += valid_crop.detach().cpu().numpy().tolist()
-            valid_disease_label_list += valid_disease.detach().cpu().numpy().tolist()
-            valid_risk_label_list += valid_risk.detach().cpu().numpy().tolist()
+            crop_f1 = compute_score(label=valid_crop_label, prediction=logits[0])
+            disease_f1 = compute_score(label=valid_disease_label, prediction=logits[1])
+            risk_f1 = compute_score(label=valid_risk_label, prediction=logits[2])
             
-            valid_output_list += predictions[0].argmax(1).detach().cpu().numpy().tolist()
-            
-    avg_valid_loss = total_valid_loss / len(validation_data)
-    valid_f1 = f1_score(valid_label_list, valid_output_list, average="macro")
-
-    return avg_valid_loss, valid_f1
+    return total_valid_loss, crop_f1, disease_f1, risk_f1
 
 def main():
     # make direcotry
@@ -147,7 +134,7 @@ def main_worker():
         # for step, sample_batched in enumerate(zip(dataloader.training_data, dataloader.validation_data)):
         for step, train_batched in enumerate(dataloader.training_data):
             # train_batched, valid_batchead = sample_batched[0], sample_batched[1]
-
+            if step == 10: break
             optimizer.zero_grad()
 
             sample_image = train_batched["image"].cuda(args.gpu, non_blocking=True)
@@ -177,23 +164,23 @@ def main_worker():
                 writer.add_scalar('learning_rate', current_lr, global_step)
                 writer.add_scalar('loss', total_loss, global_step)
                 # writer.add_scalar("train F1 score", train_f1, global_step)
-                writer.add_image('input image/image/{}'.format(0), inv_normalize(sample_image[0, :]).data, global_step)
+                for num in range(args.batch_size):
+                    writer.add_image('input image/image/{}'.format(num), inv_normalize(sample_image[num, :]).data, global_step)
 
             writer.flush()
             global_step += 1
         
-        valid_loss, valid_f1 = validate_model(dataloader.validation_data, model, criterion)
-        writer.add_scalar("valid F1 score", valid_f1, global_step)
-        print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f} | valid loss: {:.5f} | valid f1: {:.3f}"
-        print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, valid_loss, valid_f1))
-
-        # print(print_string.format(epoch+1, args.num_epochs, steps_per_epoch, global_step+1, valid_loss, valid_f1))
+        total_valid_loss, crop_f1, disease_f1, risk_f1 = validate_model(dataloader.validation_data, model, criterion, writer)
         
+        print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f} | valid loss: {:.5f} | crop f1: {:.3f} | disease f1: {:.3f} | risk f1: {:.3f}"
+        print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, total_valid_loss, crop_f1, disease_f1, risk_f1))
+
         checkpoint = {'global_step': global_step,
                     'model': model.state_dict(),
                     'optimizer': optimizer.state_dict()}
         torch.save(checkpoint, os.path.join(args.log_directory, args.model_name, 'model', 'model-{:07d}.pth'.format(global_step)))
         epoch += 1
+        model.train()
         
 if __name__ == "__main__":
     main()
