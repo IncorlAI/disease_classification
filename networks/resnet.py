@@ -22,7 +22,3 @@ class ResNet50(nn.Module):
 
         return (crop, dise, risk)
     
-    
-if __name__ == "__main__":
-    resnet = TruncatedResNet18()
-    print("test")

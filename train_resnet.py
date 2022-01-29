@@ -31,6 +31,7 @@ def get_parser():
     ## Data Path
     parser.add_argument('--train_path', default="data/train/images", help='the train images path')
     parser.add_argument('--valid_path', default="", help='the valid images path')
+    parser.add_argument('--test_path', default="data/test/images", help='the test images path')
     ## Training Resource Setting
     parser.add_argument('--num_workers', default=2, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--cuda', default=True, type=bool, help='Use cuda to train model')
@@ -86,6 +87,7 @@ def train(args):
             mode="train",
             lab_paths=lab_paths_valid,
         )
+
     train_loader = DataLoader(train_dataset,
                               batch_size=args.batch_size,
                               shuffle=True,
@@ -96,22 +98,14 @@ def train(args):
                               shuffle=False,
                               num_workers=args.num_workers,
                               )
-    train_sampler = DataLoader(train_dataset,
-                            batch_size=8,
-                            shuffle=True,
-                            num_workers=args.num_workers,
-                            )
-    valid_sampler = DataLoader(valid_dataset,
-                              batch_size=8,
-                              shuffle=False,
-                              num_workers=args.num_workers,
-                              )
     
     # Initialize generator and discriminator
     classifier = Efficient.Efficient(crop=len(train_dataset.dict_crops),
                               dise=len(train_dataset.dict_dises),
                               risk=len(train_dataset.dict_risks))
-    # classifier = ResNet50()
+    # classifier = ResNet50(crop=len(train_dataset.dict_crops),
+    #                               dise=len(train_dataset.dict_dises),
+    #                               risk=len(train_dataset.dict_risks))
     if args.multi_gpu:
         classifier = torch.nn.DataParallel(classifier, device_ids=args.multi_gpu).cuda()
     elif is_cuda:
@@ -272,9 +266,34 @@ def evaluate_classifier(classifier, loader, device, writer, step, mode="Valid"):
     writer.add_scalar(f"Eval/{mode}_Risk", corr_risk / cnt, step)
     return corr_crop / cnt, corr_dise / cnt, corr_risk / cnt
 
+# def predict(args):
+#     valid_dataset = ClassifyDataset(
+#             args.test_path,
+#             transforms=valid_transforms,
+#             mode="val",
+#             lab_paths=lab_paths_valid,
+#         )
+#     model.eval()
+#     tqdm_dataset = tqdm(enumerate(dataset))
+#     results = []
+#     for batch, batch_item in tqdm_dataset:
+#         img = batch_item['img'].to(device)
+#         seq = batch_item['csv_feature'].to(device)
+#         with torch.no_grad():
+#             output = model(img, seq)
+#         output = torch.tensor(torch.argmax(output, dim=1), dtype=torch.int32).cpu().numpy()
+#         results.extend(output)
+#     return results
+#
+# # model = CNN2RNN(max_len=max_len, embedding_dim=embedding_dim, num_features=num_features, class_n=class_n, rate=dropout_rate)
+# # model.load_state_dict(torch.load(save_path, map_location=device))
+# # model.to(device)
+
+
 
 if __name__ == "__main__":
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     args = get_parser()
     train(args)
+    # preds = predict(args)
