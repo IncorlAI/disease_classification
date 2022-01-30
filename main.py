@@ -24,7 +24,7 @@ parser.add_argument("--data_path",              type=str,   help="image data pat
 # Training
 parser.add_argument('--num_seed',               type=int,   help='random seed number',              default=1)
 parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=16)
-parser.add_argument('--num_epochs',             type=int,   help='number of epochs',                default=80)
+parser.add_argument('--num_epochs',             type=int,   help='number of epochs',                default=50)
 parser.add_argument('--learning_rate',          type=float, help='initial learning rate',           default=1e-4)
 parser.add_argument('--weight_decay',           type=float, help='weight decay factor for optimization',                                default=1e-5)
 parser.add_argument('--retrain',                type=bool,  help='If used with checkpoint_path, will restart training from step zero',  default=False)
@@ -41,7 +41,7 @@ parser.add_argument('--log_freq',               type=int,   help='Logging freque
 parser.add_argument('--save_freq',              type=int,   help='Checkpoint saving frequency in global steps',         default=500)
 
 # Multi-gpu training
-parser.add_argument('--gpu',            type=int,  help='GPU id to use', default=1)
+parser.add_argument('--gpu',            type=int,  help='GPU id to use', default=0)
 parser.add_argument('--rank',           type=int,  help='node rank(tensor dimension)for distributed training', default=0)
 parser.add_argument('--dist_url',       type=str,  help='url used to set up distributed training', default='file:///c:/MultiGPU.txt')
 parser.add_argument('--dist_backend',   type=str,  help='distributed backend', default='gloo')
@@ -66,20 +66,18 @@ def compute_score(label, prediction):
     
     return f1_score(label, prediction, average="macro")
 
-def validate_model(validation_data, model, criterion, writer):
+def validate_model(validation_data, model, criterion, writer, global_step):
+    
     total_valid_loss = 0
     with torch.no_grad():
+        model.eval()
         for step, valid_batched in enumerate(tqdm(validation_data)):
             valid_image = valid_batched["image"].cuda(args.gpu, non_blocking=True)
-            valid_crop_label = valid_batched["crop_lb"].cuda(args.gpu, non_blocking=True)
-            valid_disease_label = valid_batched["disease_lb"].cuda(args.gpu, non_blocking=True)
-            valid_risk_label = valid_batched["risk_lb"].cuda(args.gpu, non_blocking=True)
+            valid_crop_label = valid_batched["crop_lbl"].cuda(args.gpu, non_blocking=True)
+            valid_disease_label = valid_batched["disease_lbl"].cuda(args.gpu, non_blocking=True)
+            valid_risk_label = valid_batched["risk_lbl"].cuda(args.gpu, non_blocking=True)
             
             logits = model(valid_image)
-            model.eval()
-            
-            # probs = [logit.softmax(dim=1) for logit in logits]
-            # predictions = [prob.argmax(dim=1) for prob in probs]
             
             valid_crop_label_loss = criterion(logits[0], valid_crop_label)
             valid_disease_loss = criterion(logits[1], valid_disease_label)
@@ -91,6 +89,10 @@ def validate_model(validation_data, model, criterion, writer):
             disease_f1 = compute_score(label=valid_disease_label, prediction=logits[1])
             risk_f1 = compute_score(label=valid_risk_label, prediction=logits[2])
             
+            # writer.add_scalar("validation/loss", total_valid_loss, global_step)
+            # writer.add_scalar("validation/crop_f1", )
+            # for num in range(valid_image.shape[0]):
+            #   writer.add_image("validation/image/{}".format(num), valid_image[num, :], global_step)
     return total_valid_loss, crop_f1, disease_f1, risk_f1
 
 def main():
@@ -129,18 +131,14 @@ def main_worker():
     epoch = global_step // steps_per_epoch
         
     while epoch < args.num_epochs:
-        train_label_list = []
-        train_output_list = []
-        # for step, sample_batched in enumerate(zip(dataloader.training_data, dataloader.validation_data)):
         for step, train_batched in enumerate(dataloader.training_data):
-            # train_batched, valid_batchead = sample_batched[0], sample_batched[1]
-            if step == 10: break
+            # if step == 10: break
             optimizer.zero_grad()
 
             sample_image = train_batched["image"].cuda(args.gpu, non_blocking=True)
-            sample_crop = train_batched["crop_lb"].cuda(args.gpu, non_blocking=True)
-            sample_disease = train_batched["disease_lb"].cuda(args.gpu, non_blocking=True)
-            sample_risk = train_batched["risk_lb"].cuda(args.gpu, non_blocking=True)
+            sample_crop = train_batched["crop_lbl"].cuda(args.gpu, non_blocking=True)
+            sample_disease = train_batched["disease_lbl"].cuda(args.gpu, non_blocking=True)
+            sample_risk = train_batched["risk_lbl"].cuda(args.gpu, non_blocking=True)
 
             output = model(sample_image)
             loss_crop = criterion(output[0], sample_crop)
@@ -156,31 +154,69 @@ def main_worker():
 
             optimizer.step()
 
-            # train_f1 = compute_score(sample_label, output)
             print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f}"
             print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss))
 
             if (global_step + 1) % args.log_freq == 0:
-                writer.add_scalar('learning_rate', current_lr, global_step)
-                writer.add_scalar('loss', total_loss, global_step)
-                # writer.add_scalar("train F1 score", train_f1, global_step)
-                for num in range(args.batch_size):
-                    writer.add_image('input image/image/{}'.format(num), inv_normalize(sample_image[num, :]).data, global_step)
+                writer.add_scalar('train/learning_rate', current_lr, global_step)
+                writer.add_scalar('train/loss', total_loss, global_step)
+                for num in range(sample_image.shape[0]):
+                    writer.add_image('train/image/{}'.format(num), inv_normalize(sample_image[num, :]).data, global_step)
 
             writer.flush()
             global_step += 1
         
-        total_valid_loss, crop_f1, disease_f1, risk_f1 = validate_model(dataloader.validation_data, model, criterion, writer)
+        # total_valid_loss, crop_f1, disease_f1, risk_f1 = validate_model(dataloader.validation_data, model, criterion, writer, global_step)
+        total_valid_loss = 0
+        total_val_crop_f1 = 0
+        total_val_disease_f1 = 0
+        total_val_risk_f1 = 0
+        with torch.no_grad():
+            model.eval()
+            for step, valid_batched in enumerate(tqdm(dataloader.validation_data)):
+                valid_image = valid_batched["image"].cuda(args.gpu, non_blocking=True)
+                valid_crop_label = valid_batched["crop_lbl"].cuda(args.gpu, non_blocking=True)
+                valid_disease_label = valid_batched["disease_lbl"].cuda(args.gpu, non_blocking=True)
+                valid_risk_label = valid_batched["risk_lbl"].cuda(args.gpu, non_blocking=True)
+                
+                logits = model(valid_image)
+                
+                valid_crop_label_loss = criterion(logits[0], valid_crop_label)
+                valid_disease_loss = criterion(logits[1], valid_disease_label)
+                valid_risk_loss = criterion(logits[2], valid_risk_label)
+
+                total_valid_loss = valid_crop_label_loss + valid_disease_loss + valid_risk_loss
+                
+                crop_f1 = compute_score(label=valid_crop_label, prediction=logits[0])
+                disease_f1 = compute_score(label=valid_disease_label, prediction=logits[1])
+                risk_f1 = compute_score(label=valid_risk_label, prediction=logits[2])
+                total_val_crop_f1 += crop_f1
+                total_val_disease_f1 += disease_f1
+                total_val_risk_f1 += risk_f1
+                
+                # for num in range(valid_image.shape[0]):
+                #     writer.add_image("validation/image/{}".format(num), inv_normalize(valid_image[num, :]), global_step)
+            
+            total_val_crop_f1 = total_val_crop_f1 / len(dataloader.validation_data)
+            total_val_disease_f1 = total_val_disease_f1 / len(dataloader.validation_data)
+            total_val_risk_f1 = total_val_risk_f1 / len(dataloader.validation_data)
+            
+            writer.add_scalar("validation/loss", total_valid_loss, global_step)
+            writer.add_scalar("validation/crop_f1", total_val_crop_f1, global_step)
+            writer.add_scalar("validation/disease_f1", total_val_disease_f1, global_step)
+            writer.add_scalar("validation/risk_f1", total_val_risk_f1, global_step)
         
         print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f} | valid loss: {:.5f} | crop f1: {:.3f} | disease f1: {:.3f} | risk f1: {:.3f}"
-        print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, total_valid_loss, crop_f1, disease_f1, risk_f1))
+        # print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, total_valid_loss, crop_f1, disease_f1, risk_f1))
+        print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, total_valid_loss, total_val_crop_f1, total_val_disease_f1, total_val_risk_f1))
 
         checkpoint = {'global_step': global_step,
                     'model': model.state_dict(),
                     'optimizer': optimizer.state_dict()}
         torch.save(checkpoint, os.path.join(args.log_directory, args.model_name, 'model', 'model-{:07d}.pth'.format(global_step)))
-        epoch += 1
+        
         model.train()
+        epoch += 1
         
 if __name__ == "__main__":
     main()

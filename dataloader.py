@@ -39,9 +39,18 @@ for r in risk_dict.keys():
     code_idx += 1
         
 
-def update_fold_idx(training_samples):
+def set_seeds(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def update_fold_idx(pair_data):
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
-    idx_train, idx_valid = list(kf.split(training_samples.pair_data))[0]
+    idx_train, idx_valid = list(kf.split(pair_data))[0]
 
     return idx_train, idx_valid
 
@@ -66,62 +75,67 @@ def make_dataset(image_path, json_path):
 
 class DaconDataLoader(object):
     def __init__(self, args):
-        if args.mode == 'train':
-            train_sampler = None
-            self.crop2code = crop2code
-            self.disease2code = disease2code
-            self.risk2code = risk2code
-            
-            self.training_samples = DataLoadPreprocess(args)
-            idx_train_list, idx_valid_list = update_fold_idx(self.training_samples)
-
-            # train_samples = Subset(self.training_samples, ivalidx_train_list)
-            # valid_samples = Subset(self.training_samples, idx_valid_list)
-            train_sampler, valid_sampler = SubsetRandomSampler(idx_train_list), SubsetRandomSampler(idx_valid_list)
-            self.training_data = DataLoader(self.training_samples, args.batch_size, 
-                                            shuffle=(train_sampler is None),
-                                            num_workers=args.num_threads,
-                                            pin_memory= True,
-                                            sampler=train_sampler)
-            
-            self.validation_data = DataLoader(self.training_samples, args.batch_size, 
-                                              shuffle=False,
-                                              num_workers=args.num_threads,
-                                              pin_memory=True,
-                                              sampler=valid_sampler)
-            
-class DataLoadPreprocess(object):
-    def __init__(self, args):
-        self.args = args
+        self.crop2code = crop2code
+        self.disease2code = disease2code
+        self.risk2code = risk2code
+        
         image_path = os.path.join(args.data_path, args.mode, "images")
         json_path = os.path.join(args.data_path, args.mode, "json")
         
-        self.pair_data = make_dataset(image_path, json_path)
+        pair_data = make_dataset(image_path, json_path)
+        
+        set_seeds(seed=args.num_seed)
+        if args.mode == 'train':
+            train_sampler = None
+            
+            idx_train_list, idx_valid_list = update_fold_idx(pair_data)
+            train_samples = DataLoadPreprocess(pair_data, idx_train_list, mode="train")
+            valid_samples = DataLoadPreprocess(pair_data, idx_valid_list, mode="valid")
+            
+            self.training_data = DataLoader(train_samples, args.batch_size, 
+                                            shuffle=(train_sampler is None),
+                                            num_workers=args.num_threads,
+                                            pin_memory= True)
+            
+            self.validation_data = DataLoader(valid_samples, args.batch_size,
+                                              shuffle=False,
+                                              num_workers=args.num_threads,
+                                              pin_memory=True)
 
+class DataLoadPreprocess(object):
+    def __init__(self, pair_data, idx_list, mode):
+        self.mode = mode
+        self.data_samples = [pair_data[idx] for idx in idx_list]
+            
     def __getitem__(self, idx):
-        # img_path, label = self.pair_data[idx]
-        img_path, crop_label, disease_label, risk_label = self.pair_data[idx]
+        img_path, crop_label, disease_label, risk_label = self.data_samples[idx]
         image = Image.open(img_path)
         
         image = np.array(image, dtype=np.float32) /255.0
+        image = cv2.resize(image, dsize=(384, 512))
+        
         crop_label = np.array(crop_label, dtype=np.long)
         disease_label = np.array(disease_label, dtype=np.long)
         risk_label = np.array(risk_label, dtype=np.long)
         
-        label_set = {"crop": crop_label, "disease": disease_label, "risk": risk_label}
+        normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        if self.mode == "train":
+            image = self.train_preprocessing(image)
         
-        if self.args.mode == "train":
-            image, crop_label, disease_label, risk_label = self.train_preprocessing(image, label_set)
+        image = transforms.ToTensor()(image)
+        crop_label = torch.tensor(crop_label, dtype=torch.long)
+        disease_label = torch.tensor(disease_label, dtype=torch.long)
+        risk_label = torch.tensor(risk_label, dtype=torch.long)
+        image = normalization(image)
         
-        # sample = {"image": image, "label": label}
-        sample = {"image": image, "crop_lb": crop_label, "disease_lb": disease_label, "risk_lb": risk_label}
+        sample = {"image": image, "crop_lbl": crop_label, "disease_lbl": disease_label, "risk_lbl": risk_label}
+        
         return sample
     
     def __len__(self):
-        return len(self.pair_data)
+        return len(self.data_samples)
 
-    def train_preprocessing(self, image, label_set):
-        image = cv2.resize(image, dsize=(384, 512))
+    def train_preprocessing(self, image):
         hflip = random.random()
         vflip = random.random()
         if hflip > 0.5:
@@ -129,13 +143,4 @@ class DataLoadPreprocess(object):
         if vflip > 0.5:
             image = (image[::-1, :, :]).copy()
         
-        normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                             std=[0.229, 0.224, 0.225])
-        image = transforms.ToTensor()(image)
-
-        crop_label = torch.tensor(label_set["crop"], dtype=torch.long)
-        disease_label = torch.tensor(label_set["disease"], dtype=torch.long)
-        risk_label = torch.tensor(label_set["risk"], dtype=torch.long)
-        image = normalization(image)
-        
-        return image, crop_label, disease_label, risk_label
+        return image
