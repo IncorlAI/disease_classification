@@ -8,3 +8,4 @@ result
 tb_logs
 # networks/__pychache__
 dataloaders/__pycache__/loader.cpython-36.pyc
+inference.py

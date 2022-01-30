@@ -1,4 +1,5 @@
 import os
+from turtle import update
 import torch
 import numpy as np
 import cv2
@@ -9,9 +10,8 @@ from torchvision import transforms
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Subset
 from torch.utils.data.sampler import SubsetRandomSampler
+from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
-from urllib3 import disable_warnings
-
 
 disease_dict = {'1':{'a1':'딸기잿빛곰팡이병','a2':'딸기흰가루병','b1':'냉해피해','b6':'다량원소결핍 (N)','b7':'다량원소결핍 (P)','b8':'다량원소결핍 (K)'},
                 '2':{'a5':'토마토흰가루병','a6':'토마토잿빛곰팡이병','b2':'열과','b3':'칼슘결핍','b6':'다량원소결핍 (N)','b7':'다량원소결핍 (P)','b8':'다량원소결핍 (K)'},
@@ -79,36 +79,46 @@ class DaconDataLoader(object):
         self.disease2code = disease2code
         self.risk2code = risk2code
         
-        image_path = os.path.join(args.data_path, args.mode, "images")
-        json_path = os.path.join(args.data_path, args.mode, "json")
-        
-        pair_data = make_dataset(image_path, json_path)
-        
         set_seeds(seed=args.num_seed)
         if args.mode == 'train':
             train_sampler = None
             
-            idx_train_list, idx_valid_list = update_fold_idx(pair_data)
-            train_samples = DataLoadPreprocess(pair_data, idx_train_list, mode="train")
-            valid_samples = DataLoadPreprocess(pair_data, idx_valid_list, mode="valid")
+            training_samples = DataLoadPreprocess(args)
+            idx_train_list, idx_valid_list = update_fold_idx(training_samples)
+            
+            # valid_pair_data = DataLoadPreprocess(args, mode="valid")
+            
+            # idx_train, idx_valid = train_test_split(list(range(len(data_samples.pair_data))),
+            #                                         test_size=0.25)
+            train_samples = Subset(training_samples, idx_train_list)
+            valid_samples = Subset(training_samples, idx_valid_list)
             
             self.training_data = DataLoader(train_samples, args.batch_size, 
                                             shuffle=(train_sampler is None),
-                                            num_workers=args.num_threads,
-                                            pin_memory= True)
+                                            num_workers=args.num_threads)
             
             self.validation_data = DataLoader(valid_samples, args.batch_size,
                                               shuffle=False,
-                                              num_workers=args.num_threads,
-                                              pin_memory=True)
-
-class DataLoadPreprocess(object):
-    def __init__(self, pair_data, idx_list, mode):
-        self.mode = mode
-        self.data_samples = [pair_data[idx] for idx in idx_list]
+                                              num_workers=args.num_threads)
+        
+        elif args.mode == "test":
+            test_samples = DataLoadPreprocess(args)
+            self.test_data = DataLoader(test_samples, args.batch_size, shuffle=False, num_workers=args.num_threads)
             
+class DataLoadPreprocess(object):
+    def __init__(self, args):
+        self.args = args
+        
+        image_path = os.path.join(args.data_path, args.mode, "images")
+        json_path = os.path.join(args.data_path, args.mode, "json")
+        
+        self.pair_data = make_dataset(image_path, json_path)
+        
+        self.normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        
     def __getitem__(self, idx):
-        img_path, crop_label, disease_label, risk_label = self.data_samples[idx]
+        img_path, crop_label, disease_label, risk_label = self.pair_data[idx]
+            
         image = Image.open(img_path)
         
         image = np.array(image, dtype=np.float32) /255.0
@@ -118,23 +128,22 @@ class DataLoadPreprocess(object):
         disease_label = np.array(disease_label, dtype=np.long)
         risk_label = np.array(risk_label, dtype=np.long)
         
-        normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        if self.mode == "train":
+        if self.args.mode == "train":
             image = self.train_preprocessing(image)
         
         image = transforms.ToTensor()(image)
         crop_label = torch.tensor(crop_label, dtype=torch.long)
         disease_label = torch.tensor(disease_label, dtype=torch.long)
         risk_label = torch.tensor(risk_label, dtype=torch.long)
-        image = normalization(image)
+        image = self.normalization(image)
         
         sample = {"image": image, "crop_lbl": crop_label, "disease_lbl": disease_label, "risk_lbl": risk_label}
         
         return sample
     
     def __len__(self):
-        return len(self.data_samples)
-
+        return len(self.pair_data)
+        
     def train_preprocessing(self, image):
         hflip = random.random()
         vflip = random.random()
@@ -142,5 +151,6 @@ class DataLoadPreprocess(object):
             image = (image[:, ::-1, :]).copy()
         if vflip > 0.5:
             image = (image[::-1, :, :]).copy()
+        
         
         return image

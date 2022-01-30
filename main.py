@@ -1,7 +1,6 @@
-import enum
-from numpy import average
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+# from dataloader import DaconDataLoader
 from dataloader import DaconDataLoader
 from sklearn.metrics import f1_score
 from torchvision import transforms
@@ -12,8 +11,6 @@ import os
 import warnings
 import torch
 import torch.nn as nn
-import numpy as np
-
 
 parser = argparse.ArgumentParser(description="DACON")
 
@@ -24,11 +21,10 @@ parser.add_argument("--data_path",              type=str,   help="image data pat
 # Training
 parser.add_argument('--num_seed',               type=int,   help='random seed number',              default=1)
 parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=16)
-parser.add_argument('--num_epochs',             type=int,   help='number of epochs',                default=50)
+parser.add_argument('--num_epochs',             type=int,   help='number of epochs',                default=80)
 parser.add_argument('--learning_rate',          type=float, help='initial learning rate',           default=1e-4)
 parser.add_argument('--weight_decay',           type=float, help='weight decay factor for optimization',                                default=1e-5)
 parser.add_argument('--retrain',                type=bool,  help='If used with checkpoint_path, will restart training from step zero',  default=False)
-parser.add_argument('--do_eval',                type=bool,  help='Mod to evaluating the training model',                                default=False)
 
 # Preprocessing
 parser.add_argument('--random_rotate',          type=bool,  help='if set, will perform random rotation for augmentation',   default=False)
@@ -66,35 +62,6 @@ def compute_score(label, prediction):
     
     return f1_score(label, prediction, average="macro")
 
-def validate_model(validation_data, model, criterion, writer, global_step):
-    
-    total_valid_loss = 0
-    with torch.no_grad():
-        model.eval()
-        for step, valid_batched in enumerate(tqdm(validation_data)):
-            valid_image = valid_batched["image"].cuda(args.gpu, non_blocking=True)
-            valid_crop_label = valid_batched["crop_lbl"].cuda(args.gpu, non_blocking=True)
-            valid_disease_label = valid_batched["disease_lbl"].cuda(args.gpu, non_blocking=True)
-            valid_risk_label = valid_batched["risk_lbl"].cuda(args.gpu, non_blocking=True)
-            
-            logits = model(valid_image)
-            
-            valid_crop_label_loss = criterion(logits[0], valid_crop_label)
-            valid_disease_loss = criterion(logits[1], valid_disease_label)
-            valid_risk_loss = criterion(logits[2], valid_risk_label)
-
-            total_valid_loss = valid_crop_label_loss + valid_disease_loss + valid_risk_loss
-            
-            crop_f1 = compute_score(label=valid_crop_label, prediction=logits[0])
-            disease_f1 = compute_score(label=valid_disease_label, prediction=logits[1])
-            risk_f1 = compute_score(label=valid_risk_label, prediction=logits[2])
-            
-            # writer.add_scalar("validation/loss", total_valid_loss, global_step)
-            # writer.add_scalar("validation/crop_f1", )
-            # for num in range(valid_image.shape[0]):
-            #   writer.add_image("validation/image/{}".format(num), valid_image[num, :], global_step)
-    return total_valid_loss, crop_f1, disease_f1, risk_f1
-
 def main():
     # make direcotry
     command = "mkdir " + os.path.join(args.log_directory, args.model_name, "model")
@@ -129,7 +96,8 @@ def main_worker():
     global_step = 0
     steps_per_epoch = len(dataloader.training_data)
     epoch = global_step // steps_per_epoch
-        
+    
+    best_f1 = {"crop": 0, "disease": 0, "risk": 0}
     while epoch < args.num_epochs:
         for step, train_batched in enumerate(dataloader.training_data):
             # if step == 10: break
@@ -207,16 +175,48 @@ def main_worker():
             writer.add_scalar("validation/risk_f1", total_val_risk_f1, global_step)
         
         print_string = "[epoch][s/s_per_e/global_step]: [{}/{}][{}/{}/{}] | train loss: {:.5f} | valid loss: {:.5f} | crop f1: {:.3f} | disease f1: {:.3f} | risk f1: {:.3f}"
-        # print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, total_valid_loss, crop_f1, disease_f1, risk_f1))
         print(print_string.format(epoch+1, args.num_epochs, step+1, steps_per_epoch, global_step+1, total_loss, total_valid_loss, total_val_crop_f1, total_val_disease_f1, total_val_risk_f1))
 
         checkpoint = {'global_step': global_step,
                     'model': model.state_dict(),
                     'optimizer': optimizer.state_dict()}
-        torch.save(checkpoint, os.path.join(args.log_directory, args.model_name, 'model', 'model-{:07d}.pth'.format(global_step)))
         
+        if total_val_crop_f1 > best_f1["crop"]:
+            best_f1["crop"] += total_val_crop_f1
+            torch.save(checkpoint, os.path.join(args.log_directory, args.model_name, 'model', 'best_crop_model-{:07d}.pth'.format(global_step)))
+            
+        elif total_val_disease_f1 > best_f1["disease"]:
+            best_f1['disease'] += total_val_disease_f1
+            torch.save(checkpoint, os.path.join(args.log_directory, args.model_name, 'model', 'best_disease_model-{:07d}.pth'.format(global_step)))
+            
+        elif total_val_risk_f1 > best_f1["risk"]:
+            best_f1['risk'] += total_val_risk_f1
+            torch.save(checkpoint, os.path.join(args.log_directory, args.model_name, 'model', 'best_risk_model-{:07d}.pth'.format(global_step)))
+            
         model.train()
         epoch += 1
-        
+
+def test():
+    dataloader = DaconDataLoader(args)
+    
+    model = ResNet50(crop=len(dataloader.crop2code),
+                     dise=len(dataloader.disease2code),
+                     risk=len(dataloader.risk2code))
+    model = torch.nn.DataParallel(model)
+    
+    checkpoint = torch.load(args.checkpoint_path)
+    model.load_state_dict(checkpoint["model"])
+    model.eval()
+    model.cuda()
+    
+    with torch.no_grad():
+        for test_batched in dataloader.test_data:
+            test_image = test_batched["image"]
+            test_crop_label = test_batched["crop_lbl"]
+            test_disease_label = test_batched["disease_lbl"]
+            test_risk_label = test_batched["risk_lbl"]
 if __name__ == "__main__":
-    main()
+    if args.mode == "train":
+        main()
+    elif args.mode == "test":
+        test()
