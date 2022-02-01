@@ -1,5 +1,6 @@
 import os
 from turtle import update
+from sklearn.linear_model import lars_path
 import torch
 import numpy as np
 import cv2
@@ -57,6 +58,10 @@ def update_fold_idx(pair_data):
 def make_dataset(args, image_path, json_path):
     if args.mode == "train":
         pair_data = []
+        normal_risk_list = []
+        early_risk_list = []
+        middle_risk_list = []
+        last_risk_list = []
         for name in os.listdir(image_path):
             name = name.split(".")[0]
             img_file_path = os.path.join(image_path, name+".jpg")
@@ -71,8 +76,18 @@ def make_dataset(args, image_path, json_path):
             disease_label = disease2code[disease]
             risk_label = risk2code[risk]
             
+            if risk_label == 0:
+                normal_risk_list.append(risk_label)
+            elif risk_label == 1:
+                early_risk_list.append(risk_label)
+            elif risk_label == 2:
+                middle_risk_list.append(risk_label)
+            elif risk_label == 3:
+                last_risk_list.append(risk_label)
             pair_data.append([img_file_path, crop_label, disease_label, risk_label])
-        return pair_data
+        
+        risk_set = {"normal": normal_risk_list, "early": early_risk_list, "middle": middle_risk_list, "last": last_risk_list}
+        return pair_data, risk_set
     
     elif args.mode == "test":
         image_file_paths = []
@@ -82,6 +97,34 @@ def make_dataset(args, image_path, json_path):
             image_file_paths.append(img_file_path)
 
         return image_file_paths
+
+def make_risk_dataset(args, image_path, json_path):
+    if args.mode == "train":
+        normal_pair_data = []
+        early_pair_data = []
+        middle_pair_data = []
+        last_pair_data = []
+        
+        for name in os.listdir(image_path):
+            name = name.split(".")[0]
+            img_file_path = os.path.join(image_path, name+".jpg")
+            json_file_path = os.path.join(json_path, name+".json")
+            with open(json_file_path, 'r') as jf:
+                json_dict = json.load(jf)
+                risk = json_dict["annotations"]["risk"]
+            
+            risk_label = risk2code[risk]
+            if risk_label == 0:
+                normal_pair_data.append([img_file_path, risk_label])
+            elif risk_label == 1:
+                early_pair_data.append([img_file_path, risk_label])
+            elif risk_label == 2:
+                middle_pair_data.append([img_file_path, risk_label])
+            elif risk_label == 3:
+                last_pair_data.append([img_file_path, risk_label])
+
+        pair_data = normal_pair_data + early_pair_data + middle_pair_data + last_pair_data
+        return pair_data
     
 class DaconDataLoader(object):
     def __init__(self, args):
@@ -93,15 +136,15 @@ class DaconDataLoader(object):
         if args.mode == 'train':
             train_sampler = None
             
-            training_samples = DataLoadPreprocess(args)
-            idx_train_list, idx_valid_list = update_fold_idx(training_samples)
+            self.training_samples = DataLoadPreprocess(args)
+            idx_train_list, idx_valid_list = update_fold_idx(self.training_samples)
             
             # valid_pair_data = DataLoadPreprocess(args, mode="valid")
             
             # idx_train, idx_valid = train_test_split(list(range(len(data_samples.pair_data))),
             #                                         test_size=0.25)
-            train_samples = Subset(training_samples, idx_train_list)
-            valid_samples = Subset(training_samples, idx_valid_list)
+            train_samples = Subset(self.training_samples, idx_train_list)
+            valid_samples = Subset(self.training_samples, idx_valid_list)
             
             self.training_data = DataLoader(train_samples, args.batch_size, 
                                             shuffle=(train_sampler is None),
@@ -123,8 +166,9 @@ class DataLoadPreprocess(object):
             image_path = os.path.join(args.data_path, args.mode, "images")
             json_path = os.path.join(args.data_path, args.mode, "json")
             
-            self.pair_data = make_dataset(args, image_path, json_path)
-        
+            # self.pair_data, self.risk_set = make_dataset(args, image_path, json_path)
+            self.pair_data = make_risk_dataset(args, image_path, json_path)
+
         elif self.args.mode == "test":
             image_path = os.path.join(args.data_path, args.mode, "images")
             self.image_file_paths = make_dataset(args, image_path, json_path=None)
@@ -133,26 +177,30 @@ class DataLoadPreprocess(object):
         
     def __getitem__(self, idx):
         if self.args.mode == "train":
-            img_path, crop_label, disease_label, risk_label = self.pair_data[idx]
+            # img_path, crop_label, disease_label, risk_label = self.pair_data[idx]
+            img_path, label = self.pair_data[idx]
         
             image = Image.open(img_path)
             image = np.array(image, dtype=np.float32) /255.0
             image = cv2.resize(image, dsize=(384, 512))
 
-            crop_label = np.array(crop_label, dtype=np.long)
-            disease_label = np.array(disease_label, dtype=np.long)
-            risk_label = np.array(risk_label, dtype=np.long)
+            label = np.array(label, dtype=np.long)
+            # crop_label = np.array(crop_label, dtype=np.long)
+            # disease_label = np.array(disease_label, dtype=np.long)
+            # risk_label = np.array(risk_label, dtype=np.long)
 
             image = self.train_preprocessing(image)
         
             image = transforms.ToTensor()(image)
-            crop_label = torch.tensor(crop_label, dtype=torch.long)
-            disease_label = torch.tensor(disease_label, dtype=torch.long)
-            risk_label = torch.tensor(risk_label, dtype=torch.long)
+            label = torch.tensor(label, dtype=torch.long)
+            # crop_label = torch.tensor(crop_label, dtype=torch.long)
+            # disease_label = torch.tensor(disease_label, dtype=torch.long)
+            # risk_label = torch.tensor(risk_label, dtype=torch.long)
 
             image = self.normalization(image)
     
-            sample = {"image": image, "crop_lbl": crop_label, "disease_lbl": disease_label, "risk_lbl": risk_label}
+            # sample = {"image": image, "crop_lbl": crop_label, "disease_lbl": disease_label, "risk_lbl": risk_label}
+            sample = {"image": image, "label": label}
             return sample
 
         elif self.args.mode == "test":
