@@ -5,7 +5,9 @@ from dataloader import DaconDataLoader
 from sklearn.metrics import f1_score
 from torchvision import transforms
 from arch import Architecture_tmp
+from AutoEncdoer_arch import SimpleAutoEncoder
 from networks.resnet import ResNet50
+from networks.Efficient import Efficient
 import argparse
 import os
 import warnings
@@ -15,12 +17,12 @@ import torch.nn as nn
 parser = argparse.ArgumentParser(description="DACON")
 
 parser.add_argument('--mode',                   type=str,   help='training and validation mode',    default='train')
-parser.add_argument('--model_name',             type=str,   help='model name to be trained',        default='resnet')
+parser.add_argument('--model_name',             type=str,   help='model name to be trained',        default='Efficient')
 parser.add_argument("--data_path",              type=str,   help="image data path",                 default=os.path.join(os.getcwd(), "data"))
 
 # Training
 parser.add_argument('--num_seed',               type=int,   help='random seed number',              default=1)
-parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=16)
+parser.add_argument('--batch_size',             type=int,   help='train batch size',                default=8)
 parser.add_argument('--num_epochs',             type=int,   help='number of epochs',                default=80)
 parser.add_argument('--learning_rate',          type=float, help='initial learning rate',           default=1e-4)
 parser.add_argument('--weight_decay',           type=float, help='weight decay factor for optimization',                                default=1e-5)
@@ -37,7 +39,7 @@ parser.add_argument('--log_freq',               type=int,   help='Logging freque
 parser.add_argument('--save_freq',              type=int,   help='Checkpoint saving frequency in global steps',         default=500)
 
 # Multi-gpu training
-parser.add_argument('--gpu',            type=int,  help='GPU id to use', default=0)
+parser.add_argument('--gpu',            type=int,  help='GPU id to use', default=1)
 parser.add_argument('--rank',           type=int,  help='node rank(tensor dimension)for distributed training', default=0)
 parser.add_argument('--dist_url',       type=str,  help='url used to set up distributed training', default='file:///c:/MultiGPU.txt')
 parser.add_argument('--dist_backend',   type=str,  help='distributed backend', default='gloo')
@@ -79,10 +81,12 @@ def main_worker():
     dataloader = DaconDataLoader(args)
 
     # model = Architecture_tmp(model_type=args.model_name, num_classes=6)
-    model = ResNet50(crop=len(dataloader.crop2code),
-                     dise=len(dataloader.disease2code),
-                     risk=len(dataloader.risk2code))
-    
+    # model = ResNet50(crop=len(dataloader.crop2code),
+    #                  dise=len(dataloader.disease2code),
+    #                  risk=len(dataloader.risk2code))
+    model = Efficient(crop=len(dataloader.crop2code),
+                      dise=len(dataloader.disease2code),
+                      risk=len(dataloader.risk2code))
     model.train()
     model = torch.nn.DataParallel(model, device_ids=[args.gpu])
     model.to(f'cuda:{model.device_ids[0]}')
@@ -204,17 +208,34 @@ def test():
                      risk=len(dataloader.risk2code))
     model = torch.nn.DataParallel(model)
     
-    checkpoint = torch.load(args.checkpoint_path)
-    model.load_state_dict(checkpoint["model"])
+    args.checkpoint_path = os.path.join(args.log_directory, args.model_name, "model")
+    crop_checkpoint_path = os.path.join(args.checkpoint_path, "best_crop_model-0001050.pth")
+    disease_checkpoint_path = os.path.join(args.checkpoint_path, "best_disease_model-0002100.pth")
+    risk_checkpoint_path = os.path.join(args.checkpoint_path, "best_risk_model-0003150.pth")
+    
+    crop_checkpoint = torch.load(crop_checkpoint_path)
+    disease_checkpoint = torch.load(disease_checkpoint_path)
+    risk_checkpoint = torch.load(risk_checkpoint_path)
+    
+    model.load_state_dict(risk_checkpoint["model"])
     model.eval()
     model.cuda()
     
+    results = []
     with torch.no_grad():
-        for test_batched in dataloader.test_data:
-            test_image = test_batched["image"]
-            test_crop_label = test_batched["crop_lbl"]
-            test_disease_label = test_batched["disease_lbl"]
-            test_risk_label = test_batched["risk_lbl"]
+        num = 0
+        for batched_image in dataloader.test_data:
+            if num == 10: break
+            image_samples = batched_image.cuda()
+            outputs = model(image_samples)
+            
+            probs = [output.softmax(axis=1).detach().cpu() for output in outputs]
+            prediction = [prob.argmax(axis=1).detach().cpu() for prob in probs]
+            results.append(prediction)
+            num += 1
+        
+        crop2code_list = list(dataloader.crop2code.keys())
+        results = list(map(lambda crop_idx: crop2code_list[crop_idx], results))
 if __name__ == "__main__":
     if args.mode == "train":
         main()
